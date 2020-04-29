@@ -1,0 +1,7 @@
+* 2020-04-28 Notes
+** 2020-04-03_dataRun/000000_digitizer.bin
+   This data point  has been what I have been testing the waveform matching programs on.
+   The amplitude distribution appears bimodal, but I think these are all real events by
+   the following reasoning:
+   1. Looking at the IAT of all events, it follows an exponential distribution with Gamma = 4.28(8) per second
+   2. I should expect ~4280(60) events

@@ -7,9 +7,9 @@
 #include <sstream>
 #include <ctime>
 #include <cstdlib>
-#include <algorithm>
+#include <chrono>
 #include <list>
-
+#include <pthread.h>
 //ROOT libraries, linked by g++ -o targetfile codeFile.C `root-config --cflags --libs`
 //
 #include <TFile.h>
@@ -98,24 +98,24 @@ int main(int argc, char **argv){
   /// Functions for filtering
   ///////////////////////////////
 
-  // For some reason, in Root macros run in Cling, you don't need to put parantheses around the function names
-  // In constrast, within a compiled C++ program the user defined functions must be called as strings.
-  TF1 *noise = new TF1("noise","fNoise",0,240); // last number is the number of parameters
-  TF1 *one_peak = new TF1("one_peak","fOnePeak",0,240,2);
-  TF1 *two_peak = new TF1("two_peak","fTwoPeak",0,240,6);
-
+  
+  TF1 *noise = new TF1("noise",fNoise,0,240,1); // last number is the number of parameters
+  TF1 *one_peak = new TF1("one_peak",fOnePeak,0,240,2);
+  TF1 *two_peak = new TF1("two_peak",fTwoPeak,0,240,6);
+  std::cout << "Functions made\n";
   //////////////////////////////
   /// Parameters for filtering
   //////////////////////////////
 
   double gamma =0.;
   double chi_noise=0.;
+  double chi_onePeak=0;
   double chi_twoPeak=0.;
 
   //////////////////////////////
   /// Process the text file
   //////////////////////////////
-
+  auto start = std::chrono::system_clock::now();
   while(std::getline(caenTextFile,dataline)){
     // This next keeps track of what channel we are looking at
     if (dataline.find("# CHANNEL") != std::string::npos){
@@ -151,7 +151,7 @@ int main(int argc, char **argv){
     }
     for (int i=0; i<recordLength; i++){
       ss >> waveform[i];
-      normed_data[i] = (double)waveform[i]-(double)baseline;
+      normed_data[i] = std::abs((double)waveform[i]-(double)baseline);
       normed_data[i] = normed_data[i]/(double)amplitude;
     }
 
@@ -168,6 +168,7 @@ int main(int argc, char **argv){
     one_peak->SetParameters(10,1./150.);
     g->Fit("one_peak","Q"); // Q for quiet, don't need the output
     gamma = g->GetFunction("one_peak")->GetParameter(1); // grabs the decay rate
+    chi_onePeak = g->GetFunction("one_peak")->GetChisquare();
 
     //////////////////////////////////////////////////////////////////////////////
     /// If one peak, then fill the tree and move to next iteration of while loop
@@ -175,7 +176,7 @@ int main(int argc, char **argv){
     // The bounds were determined by experimentation
     // Fits of one_peak to noise and double peak events yield bad gamma values outside these bounds
 
-    if ((gamma < 1./50.) && (gamma<1./180.)){
+    if ((gamma < 1./50.) && (gamma>1./180.)){
       oldTimeTag = newTimeTag;
       newTimeTag = timeTag;
       iat = newTimeTag - oldTimeTag;
@@ -191,13 +192,13 @@ int main(int argc, char **argv){
     chi_noise = g->GetFunction("noise")->GetChisquare();
 
     two_peak->SetParLimits(0,0,50);
-    two_peak->SetParLimits(1,50,240);
+    two_peak->SetParLimits(1,10,200);
     two_peak->SetParLimits(2,1,20);
     two_peak->SetParLimits(3,1/240.,1/50.);
     two_peak->SetParLimits(4,0,1);
     two_peak->SetParLimits(5,1/240.,1/50.);
-    two_peak->SetParameters(10,140,1,1/150.,0.5,1/150.);
-    g->Fit("two_peaks","MQ"); // M option is for "improved", Minuit throws more function calls
+    two_peak->SetParameters(10,50,1,1/150.,0.5,1/150.);
+    g->Fit("two_peak","MQ"); // M option is for "improved", Minuit throws more function calls
     chi_twoPeak = g->GetFunction("two_peak")->GetChisquare();
 
     // The above order is nice because it lets one grab the info for the double peak should it be required
@@ -206,7 +207,7 @@ int main(int argc, char **argv){
     /// If noise, throw the event away
     //////////////////////////////////////////////////////////////////////////////
 
-    if(chi_noise <= chi_twoPeak){
+    if(chi_noise <= chi_twoPeak || chi_twoPeak > 10.){
       // don't update any time tags and don't fill
       continue;
     }
@@ -225,13 +226,16 @@ int main(int argc, char **argv){
       newTimeTag = newTimeTag + (int)(g->GetFunction("two_peak")->GetParameter(1));
       iat = (int)(g->GetFunction("two_peak")->GetParameter(1));
       amplitude = (int)(amplitude*g->GetFunction("two_peak")->GetParameter(4));
+      std::cout << chi_onePeak << " " << chi_twoPeak << '\n';
+      g->Write();
       active_ch->Fill();
     }
   }
 
   caenTextFile.close();
-
-  std::cout << "Filtering Complete\n";
+  auto end = std::chrono::system_clock::now();
+  auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end-start);
+  std::cout << "Filtering Completed in : " << elapsed.count() << '\n';
 
   ///////////////////////////////////////////////////////////////////////////////////
   // Now we will take the collected data and attempt to extract the real events
@@ -249,11 +253,23 @@ int main(int argc, char **argv){
   TTree *devB = new TTree("devB","devB");
 
 
-  //////////////////////////////////////////
-  // Definition in rootSupport.cpp
-  //////////////////////////////////////////
+  ///////////////////////////////////////////////////////////////
+  // Find event pairs so that we may now the location of events
+  ///////////////////////////////////////////////////////////////
+  start = std::chrono::system_clock::now();
   findEventPairs(devA,channel0,channel1);
   findEventPairs(devB,channel2,channel3);
+
+  TTree *positionDevA = new TTree("positionDevA","positionDevA");
+  TTree *positionDevB = new TTree("positionDevB","positionDevB");
+
+  iatByPosition(devA,positionDevA);
+  iatByPosition(devB,positionDevB);
+
+  end = std::chrono::system_clock::now();
+  elapsed = std::chrono::duration_cast<std::chrono::seconds>(end-start);
+
+  
 
   channel0->Write();
   channel1->Write();
@@ -261,7 +277,9 @@ int main(int argc, char **argv){
   channel3->Write();
   devA->Write();
   devB->Write();
+  positionDevA->Write();
+  positionDevB->Write();
   rootFile->Close();
-  std::cout << "Event Pairing Complete\n";
+  std::cout << "Event Pairing Completed in:" << elapsed.count() << '\n';
   return 0;
 }
