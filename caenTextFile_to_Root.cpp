@@ -149,6 +149,9 @@ int main(int argc, char **argv){
     if (channel == 0 || channel == 2){
       amplitude = overshoot;
     }
+    if (amplitude < 80){
+      continue;
+    }
     for (int i=0; i<recordLength; i++){
       ss >> waveform[i];
       normed_data[i] = std::abs((double)waveform[i]-(double)baseline);
@@ -161,8 +164,8 @@ int main(int argc, char **argv){
     //////////////////////////////
 
     // Set parameter limits, the function arguments go as SetParLimits(parameter #, lower_limit, upper_limit)
-    one_peak->SetParLimits(0,0,240);
-    one_peak->SetParLimits(1,0,1);
+    one_peak->SetParLimits(0,0,50);
+    one_peak->SetParLimits(1,1/240.,1/50.);
 
     // Initial parameter values in order of by parameter number SetParameters(par0,par1,par2,...)
     one_peak->SetParameters(10,1./150.);
@@ -176,11 +179,15 @@ int main(int argc, char **argv){
     // The bounds were determined by experimentation
     // Fits of one_peak to noise and double peak events yield bad gamma values outside these bounds
 
-    if ((gamma < 1./50.) && (gamma>1./180.)){
+    if ((gamma < 1./50.) && (gamma>1./180.) && (chi_onePeak < 10.)){
       oldTimeTag = newTimeTag;
       newTimeTag = timeTag;
       iat = newTimeTag - oldTimeTag;
       active_ch -> Fill();
+      if (amplitude < 150){
+        g->Write();
+        std::cout << chi_onePeak << '\n';
+      }
       continue;
     }
 
