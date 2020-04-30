@@ -184,10 +184,6 @@ int main(int argc, char **argv){
       newTimeTag = timeTag;
       iat = newTimeTag - oldTimeTag;
       active_ch -> Fill();
-      if (amplitude < 150){
-        g->Write();
-        std::cout << chi_onePeak << '\n';
-      }
       continue;
     }
 
@@ -233,8 +229,8 @@ int main(int argc, char **argv){
       newTimeTag = newTimeTag + (int)(g->GetFunction("two_peak")->GetParameter(1));
       iat = (int)(g->GetFunction("two_peak")->GetParameter(1));
       amplitude = (int)(amplitude*g->GetFunction("two_peak")->GetParameter(4));
-      std::cout << chi_onePeak << " " << chi_twoPeak << '\n';
-      g->Write();
+      //std::cout << chi_onePeak << " " << chi_twoPeak << '\n';
+      //g->Write();
       active_ch->Fill();
     }
   }
