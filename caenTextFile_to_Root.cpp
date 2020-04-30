@@ -57,7 +57,7 @@ int main(int argc, char **argv){
   // Need the * in TTree declaration since we are working with pointers to TTrees (tested in Cling)
   std::list<TTree*> channel_list{channel0,channel1,channel2,channel3};
 
-  caenTextFile.open("output.txt");
+  caenTextFile.open(datum.str()+".txt");
   std::string dataline; // Where the output.txt lines are dumped into for processing
 
   //////////////////////////////
