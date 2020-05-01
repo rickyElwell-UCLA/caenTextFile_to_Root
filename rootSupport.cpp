@@ -102,7 +102,7 @@ void findEventPairs(TTree *dev, TTree *pos_ch, TTree *neg_ch){
   for(int i=0;i<nPos;i++){
     pos_ch->GetEntry(i);
     for(int j=0;j<nNeg;j++){
-      neg_ch->GetEntry(j);
+      neg_ch->GetEntry((i-10+j)%nNeg); // ensures we start close to the target
       impactPosition = posOldTimeTag - negOldTimeTag;
       decayPosition = posNewTimeTag - negNewTimeTag;
       relativePosition = impactPosition - decayPosition;
@@ -113,7 +113,7 @@ void findEventPairs(TTree *dev, TTree *pos_ch, TTree *neg_ch){
       if (std::abs(impactPosition) < 10 && std::abs(decayPosition) < 10){
         iat = (pos_iat + neg_iat)/2; // average the interrArrival times
         dev->Fill();
-        continue;
+        break;
       }
     }
   }
