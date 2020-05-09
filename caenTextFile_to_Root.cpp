@@ -21,6 +21,7 @@
 #include <TDirectory.h>
 #include <TCanvas.h>
 #include <TGraph.h>
+#include <TMultiGraph.h>
 
 // Libraries from scratch
 #include "globalConstants_snspi.h"
@@ -60,6 +61,11 @@ int main(int argc, char **argv){
   caenTextFile.open(datum.str()+".txt");
   std::string dataline; // Where the output.txt lines are dumped into for processing
 
+  TMultiGraph *singles = new TMultiGraph("singles","single waveforms");
+  TMultiGraph *doubles = new TMultiGraph("doubles","double waveforms");
+  TMultiGraph *noisy = new TMultiGraph("noisy","noise waveforms");
+  TMultiGraph *clipped = new TMultiGraph("clipped","clipped waveforms");
+
   //////////////////////////////
   // Variables for data
   //////////////////////////////
@@ -72,6 +78,7 @@ int main(int argc, char **argv){
   int waveform[recordLength];
   double xaxis[recordLength];
   double normed_data[recordLength];
+  double smoothed_data[recordLength];
 
   for (int i=0;i<recordLength;i++){
     xaxis[i] = (double)i;
@@ -101,6 +108,7 @@ int main(int argc, char **argv){
   
   TF1 *noise = new TF1("noise",fNoise,0,240,1); // last number is the number of parameters
   TF1 *one_peak = new TF1("one_peak",fOnePeak,0,240,2);
+  TF1 *one_peak_clipped = new TF1("one_peak_clipped",fOnePeakClipped,0,240,4);
   TF1 *two_peak = new TF1("two_peak",fTwoPeak,0,240,6);
   std::cout << "Functions made\n";
   //////////////////////////////
@@ -109,7 +117,8 @@ int main(int argc, char **argv){
 
   double gamma =0.;
   double chi_noise=0.;
-  double chi_onePeak=0;
+  double chi_onePeak=0.;
+  double chi_onePeakClipped=0.;
   double chi_twoPeak=0.;
 
   //////////////////////////////
@@ -158,7 +167,31 @@ int main(int argc, char **argv){
       normed_data[i] = normed_data[i]/(double)amplitude;
     }
 
-    TGraph *g = new TGraph(recordLength,xaxis,normed_data); // Generate a TGraph object to call fit method
+    ///////////////////////////////////
+    /// Smooth the data for processing
+    ///////////////////////////////////
+    /*for (int i=0; i<recordLength; i++){
+      if (i<2){
+        smoothed_data[i] = (normed_data[i] + normed_data[i+1])/2.;
+      }
+      else if (i>recordLength-2){
+        smoothed_data[i] = (normed_data[i] + normed_data[i-1])/2.;
+      }
+      else {
+        smoothed_data[i] = (normed_data[i-2] + normed_data[i-1] + normed_data[i] + normed_data[i+1] + normed_data[i+2])/5.;
+      }
+    }*/
+    for (int i=0; i<recordLength;i++){
+      double alpha = 0.3;
+      if(i==0){
+        smoothed_data[i] = normed_data[i];
+      }
+      else{
+        smoothed_data[i] = alpha*normed_data[i] + (1.-alpha)*smoothed_data[i-1];
+      }
+    }
+
+    TGraph *g = new TGraph(recordLength,xaxis,smoothed_data); // Generate a TGraph object to call fit method
     //////////////////////////////
     /// Check for one peak
     //////////////////////////////
@@ -184,21 +217,31 @@ int main(int argc, char **argv){
       newTimeTag = timeTag;
       iat = newTimeTag - oldTimeTag;
       active_ch -> Fill();
+      singles->Add(g);
       continue;
     }
 
     //////////////////////////////////////////////////////////////////////////////
-    /// If not one peak, then see whether noise or two peak fits better
+    /// If not one peak, then check all the other cases
     //////////////////////////////////////////////////////////////////////////////
     noise->SetParLimits(0,0,1);
     g->Fit("noise","Q");
     chi_noise = g->GetFunction("noise")->GetChisquare();
 
+    one_peak_clipped->SetParLimits(0,0,50);
+    one_peak_clipped->SetParLimits(1,0.5,1.);
+    one_peak_clipped->SetParLimits(2,50,240);
+    one_peak_clipped->SetParLimits(3,10,300);
+    one_peak_clipped->SetParameters(10,0.8,150.,100.);
+    g->Fit("one_peak_clipped","MQ");
+    chi_onePeakClipped = g->GetFunction("one_peak_clipped")->GetChisquare();
+
+
     two_peak->SetParLimits(0,0,50);
     two_peak->SetParLimits(1,10,200);
-    two_peak->SetParLimits(2,1,20);
+    two_peak->SetParLimits(2,1,10);
     two_peak->SetParLimits(3,1/240.,1/50.);
-    two_peak->SetParLimits(4,0,1);
+    two_peak->SetParLimits(4,0.5,1);
     two_peak->SetParLimits(5,1/240.,1/50.);
     two_peak->SetParameters(10,50,1,1/150.,0.5,1/150.);
     g->Fit("two_peak","MQ"); // M option is for "improved", Minuit throws more function calls
@@ -210,15 +253,26 @@ int main(int argc, char **argv){
     /// If noise, throw the event away
     //////////////////////////////////////////////////////////////////////////////
 
-    if(chi_noise <= chi_twoPeak || chi_twoPeak > 10.){
+    if((chi_noise <= chi_twoPeak && chi_noise <= chi_onePeakClipped)){
       // don't update any time tags and don't fill
+      noisy->Add(g);
+      continue;
+    }
+
+    if(chi_noise > chi_onePeakClipped && chi_twoPeak > chi_onePeakClipped){
+      oldTimeTag = newTimeTag;
+      newTimeTag = timeTag;
+      iat = newTimeTag - oldTimeTag;
+      active_ch->Fill();
+      g->Fit("one_peak_clipped","Q");
+      clipped->Add(g);
       continue;
     }
 
     //////////////////////////////////////////////////////////////////////////////
     /// If two peaks, then grab data for both events
     //////////////////////////////////////////////////////////////////////////////
-    if(chi_noise > chi_twoPeak){
+    if(chi_noise > chi_twoPeak && chi_onePeakClipped >= chi_twoPeak){
       // log the first peak
       oldTimeTag = newTimeTag;
       newTimeTag = timeTag;
@@ -232,6 +286,7 @@ int main(int argc, char **argv){
       //std::cout << chi_onePeak << " " << chi_twoPeak << '\n';
       //g->Write();
       active_ch->Fill();
+      doubles->Add(g);
     }
   }
 
@@ -282,6 +337,10 @@ int main(int argc, char **argv){
   devB->Write();
   positionDevA->Write();
   positionDevB->Write();
+  singles->Write();
+  doubles->Write();
+  noisy->Write();
+  clipped->Write();
   rootFile->Close();
   std::cout << "Event Pairing Completed in:" << elapsed.count() << '\n';
   return 0;

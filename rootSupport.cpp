@@ -27,6 +27,40 @@ Double_t fOnePeak(Double_t *x, Double_t *par){
   return value;
 }
 
+/*Double_t fOnePeakClipped(Double_t *x, Double_t *par){
+  // Parameter Description:
+  // p0 - the position of the impact
+  // p1 - length of plateau
+  // p2 - decay rate
+  Double_t value;
+  if (x[0] < par[0]){
+    value = 0;
+  }
+  if (x[0] > par[0] && x[0] < par[0] + par[1]){
+    value = 1;
+  }
+  if (x[0] > par[0]+par[1]){
+    value = TMath::Exp(-par[2]*(x[0]-par[0]-par[1]));
+  }
+  return value;
+}*/
+
+Double_t fOnePeakClipped(Double_t *x, Double_t *par){
+  // Parameter description:
+  // p0 - position of the impact
+  // p1 - amplitude of erfc
+  // p2 - center of erfc
+  // p3 - width of erfc
+  Double_t value = 0.;
+  if (x[0] < par[0]){
+    value =0.;
+  }
+  if (x[0] > par[0]){
+    value = par[1] * TMath::Erfc((x[0]-par[2])/par[3]);
+  }
+  return value;
+}
+
 Double_t fTwoPeak(Double_t *x, Double_t *par){
   Double_t arg = x[0];
   Double_t value = 0.;
@@ -47,7 +81,7 @@ Double_t fTwoPeak(Double_t *x, Double_t *par){
   // second rise
   if ((arg>(par[0]+par[1])) && (arg<=((par[0]+par[1])+par[2]))){
     // slope = dy/dx, so par[2] > 0
-    value = (par[4]-TMath::Exp(-par[3]*((par[0]+par[1])-par[0])))/par[2]*(arg-(par[0]+par[1])) + TMath::Exp(-par[3]*((par[0]+par[1])-par[0]));
+    value = (par[4]-TMath::Exp(-par[3]*(par[1])))/par[2]*(arg-(par[0]+par[1])) + TMath::Exp(-par[3]*((par[0]+par[1])-par[0]));
     return value;
   }
   // second decay
